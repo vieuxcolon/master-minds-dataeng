@@ -1,1 +1,195 @@
+version: '3.9'
+
+x-airflow-common:
+  &airflow-common
+  build: .
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+networks:
+  Practice:
+    name: airflow_network
+
+volumes:
+  postgres-db-volume:
+  mongo-data:
+  mongo-config:
+  superset-home:
+
+services:
+  ############################
+  # Postgres (ETL ingestion)
+  ############################
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    networks:
+      - Practice
+
+  pgadmin:
+    container_name: pgadmin_airflow
+    image: elestio/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    networks:
+      - Practice
+
+  ############################
+  # Redis + RedisInsight
+  ############################
+  redis:
+    image: redis:7.2-bookworm
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+    networks:
+      - Practice
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "${REDISINSIGHT_PORT}:5540"
+    depends_on:
+      - redis
+    networks:
+      - Practice
+
+  ############################
+  # MongoDB + Mongo Express
+  ############################
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_PORT1}:27017"
+      - "${MONGO_PORT2}:27018"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    networks:
+      - Practice
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD}
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+      ME_CONFIG_MONGODB_SERVER: ${ME_CONFIG_MONGODB_SERVER}
+      ME_CONFIG_MONGODB_PORT: "${ME_CONFIG_MONGODB_PORT}"
+    ports:
+      - "${ME_PORT}:8081"
+    depends_on:
+      - mongo
+    networks:
+      - Practice
+
+  ############################
+  # Apache Druid
+  ############################
+  druid:
+    image: apache/druid:latest
+    environment:
+      DRUID_HOST: druid
+    ports:
+      - "8888:8888"   # Druid Console
+      - "8082:8082"   # Broker API
+    networks:
+      - Practice
+
+  ############################
+  # Apache Superset
+  ############################
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    environment:
+      SUPERSET_ENV: "production"
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      # Optional: use Postgres for metadata
+      SUPERSET_DATABASE_URI: postgresql+psycopg2://superset:superset@postgres:5432/superset
+    ports:
+      - "${SUPERSET_PORT}:8088"
+    volumes:
+      - superset-home:/app/superset_home
+    networks:
+      - Practice
+    depends_on:
+      - postgres
+
+  ############################
+  # Apache Airflow (scheduler, webserver, workers)
+  ############################
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    restart: always
+    networks:
+      - Practice
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    networks:
+      - Practice
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    restart: always
+    networks:
+      - Practice
 
