@@ -1,0 +1,37 @@
+# =====================
+# Environment files
+# =====================
+.env
+.env.debug
+
+# =====================
+# Runtime directories
+# =====================
+logs/
+data/
+
+# =====================
+# Python artifacts
+# =====================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# =====================
+# Airflow
+# =====================
+airflow.db
+airflow-webserver.pid
+
+# =====================
+# Docker
+# =====================
+*.log
+
+# =====================
+# OS / Editor
+# =====================
+.DS_Store
+.vscode/
+.idea/
