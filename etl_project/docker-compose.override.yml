@@ -1,1 +1,113 @@
+version: "3.9"
+
+services:
+  # -----------------------------
+  # Airflow services with debug
+  # -----------------------------
+  airflow-apiserver:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+      args:
+        AIRFLOW_UID: 50000
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"   # Airflow webserver
+      - "5678:5678"   # debugpy for VSCode
+    environment:
+      _PIP_ADDITIONAL_REQUIREMENTS: debugpy
+    command: webserver
+    restart: always
+
+  airflow-scheduler:
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: scheduler
+    restart: always
+
+  airflow-worker:
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: celery worker
+    restart: always
+
+  airflow-triggerer:
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: triggerer
+    restart: always
+
+  # -----------------------------
+  # Postgres (no change, but ensure volume mounting for logs)
+  # -----------------------------
+  postgres:
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+
+  pgadmin:
+    ports:
+      - "${PGADMIN_PORT}:80"
+
+  # -----------------------------
+  # Mongo + Mongo Express (no change)
+  # -----------------------------
+  mongo:
+    volumes:
+      - MONGO_DATA:/data/db
+      - MONGO_CONFIG:/data/configdb
+
+  client:
+    depends_on:
+      - mongo
+
+  # -----------------------------
+  # Redis + RedisInsight (no change)
+  # -----------------------------
+  redis:
+    ports:
+      - "${REDIS_PORT}:6379"
+
+  insight:
+    depends_on:
+      - redis
+    ports:
+      - "${REDISINSIGHT_PORT}:5540"
+
+  # -----------------------------
+  # Apache Druid (ensure healthchecks & ports)
+  # -----------------------------
+  druid:
+    ports:
+      - "8888:8888"  # example coordinator port
+    environment:
+      DRUID_XMX: "1g"
+      DRUID_XMS: "512m"
+
+  # -----------------------------
+  # Apache Superset
+  # -----------------------------
+  superset:
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_ENV: development
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_SECRET_KEY: "superset-debug-secret"
+    volumes:
+      - ./superset:/app/superset
+    command: >
+      sh -c "superset db upgrade &&
+             superset init &&
+             superset run -p 8088 --with-threads --reload --debugger"
+    restart: always
 
