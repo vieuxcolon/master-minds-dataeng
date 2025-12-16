@@ -163,7 +163,7 @@ services:
   # Apache Druid (POC single node)
   # ---------------------------
   druid:
-    image: apache/druid:latest
+    image: image: apache/druid:35.0.1
     ports:
       - "8888:8888"
       - "8082:8082"
