@@ -20,6 +20,7 @@ x-airflow-common: &airflow-common
     context: ./docker
     dockerfile: Dockerfile.airflow
   environment:
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >
       postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
