@@ -13,6 +13,7 @@ services:
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ./data:/opt/airflow/data
+      - ./config:/opt/airflow/config
     ports:
       - "8080:8080"   # Airflow webserver
       - "5678:5678"   # debugpy for VSCode
@@ -20,87 +21,175 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: debugpy
     command: webserver
     restart: always
+    depends_on:
+      - postgres
+      - redis
 
   airflow-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+      args:
+        AIRFLOW_UID: 50000
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config:/opt/airflow/config
     command: scheduler
     restart: always
+    depends_on:
+      - postgres
+      - redis
 
   airflow-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+      args:
+        AIRFLOW_UID: 50000
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config:/opt/airflow/config
     command: celery worker
     restart: always
+    depends_on:
+      - postgres
+      - redis
 
   airflow-triggerer:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+      args:
+        AIRFLOW_UID: 50000
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config:/opt/airflow/config
     command: triggerer
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+
+  # -----------------------------
+  # Postgres (ETL ingestion)
+  # -----------------------------
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  pgadmin:
+    image: elestio/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    restart: always
+    depends_on:
+      - postgres
+
+  # -----------------------------
+  # MongoDB + Mongo Express
+  # -----------------------------
+  mongo:
+    image: mongo:latest
+    container_name: mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_PORT1}:27017"
+      - "${MONGO_PORT2}:27018"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    restart: always
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${ME_CONFIG_MONGODB_ADMINUSERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${ME_CONFIG_MONGODB_ADMINPASSWORD}
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: "${ME_CONFIG_MONGODB_PORT}"
+    ports:
+      - "${ME_PORT}:8081"
+    depends_on:
+      - mongo
     restart: always
 
   # -----------------------------
-  # Postgres (no change, but ensure volume mounting for logs)
-  # -----------------------------
-  postgres:
-    volumes:
-      - postgres-db-volume:/var/lib/postgresql/data
-
-  pgadmin:
-    ports:
-      - "${PGADMIN_PORT}:80"
-
-  # -----------------------------
-  # Mongo + Mongo Express (no change)
-  # -----------------------------
-  mongo:
-    volumes:
-      - MONGO_DATA:/data/db
-      - MONGO_CONFIG:/data/configdb
-
-  client:
-    depends_on:
-      - mongo
-
-  # -----------------------------
-  # Redis + RedisInsight (no change)
+  # Redis + RedisInsight
   # -----------------------------
   redis:
+    image: redis:7.2-bookworm
     ports:
       - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
 
-  insight:
-    depends_on:
-      - redis
+  redisinsight:
+    image: redis/redisinsight:latest
     ports:
       - "${REDISINSIGHT_PORT}:5540"
+    depends_on:
+      - redis
+    restart: always
 
   # -----------------------------
-  # Apache Druid (ensure healthchecks & ports)
+  # Apache Druid
   # -----------------------------
   druid:
-    ports:
-      - "8888:8888"  # example coordinator port
+    image: apache/druid:latest
     environment:
       DRUID_XMX: "1g"
       DRUID_XMS: "512m"
+    ports:
+      - "8888:8888"
+    restart: always
 
   # -----------------------------
   # Apache Superset
   # -----------------------------
   superset:
-    ports:
-      - "8088:8088"
+    image: apache/superset:latest
     environment:
       SUPERSET_ENV: development
       SUPERSET_LOAD_EXAMPLES: "no"
       SUPERSET_SECRET_KEY: "superset-debug-secret"
+      SUPERSET_DATABASE_URI: postgresql+psycopg2://superset:superset@postgres:5432/superset
+    ports:
+      - "8088:8088"
     volumes:
       - ./superset:/app/superset
     command: >
@@ -108,4 +197,14 @@ services:
              superset init &&
              superset run -p 8088 --with-threads --reload --debugger"
     restart: always
+    depends_on:
+      - postgres
 
+# -----------------------------
+# Named volumes
+# -----------------------------
+volumes:
+  postgres-db-volume:
+  mongo-data:
+  mongo-config:
+  superset-home:
