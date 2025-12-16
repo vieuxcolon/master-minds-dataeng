@@ -1,48 +1,9 @@
-# -------------------------------------------------------------
-# Base Image
-# -------------------------------------------------------------
-FROM apache/airflow:2.9.3-python3.11
+FROM apache/airflow:3.1.0
 
-# -------------------------------------------------------------
-# Optional build argument for UID
-# -------------------------------------------------------------
-ARG AIRFLOW_UID=50000
-
-# -------------------------------------------------------------
-# Copy requirements files
-# -------------------------------------------------------------
-COPY requirements-base.txt /tmp/requirements-base.txt
-COPY requirements-heavy.txt /tmp/requirements-heavy.txt
-
-# -------------------------------------------------------------
-# Switch to airflow user (official image default)
-# -------------------------------------------------------------
-USER airflow
-
-# -------------------------------------------------------------
-# Environment Variables
-# -------------------------------------------------------------
 ENV AIRFLOW_HOME=/opt/airflow
 WORKDIR $AIRFLOW_HOME
 ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
 
-# -------------------------------------------------------------
-# Install Python dependencies
-# -------------------------------------------------------------
-# Base requirements
-RUN if [ -f /tmp/requirements-base.txt ]; then \
-        pip install --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-base.txt; \
-    fi
+COPY requirements.txt $AIRFLOW_HOME/requirements.txt
 
-# Heavy requirements (optional large packages)
-RUN if [ -f /tmp/requirements-heavy.txt ]; then \
-        pip install --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-heavy.txt; \
-    fi
-
-# -------------------------------------------------------------
-# Copy dags, plugins, config (optional, usually mounted)
-# -------------------------------------------------------------
-# COPY dags/ $AIRFLOW_HOME/dags/
-# COPY plugins/ $AIRFLOW_HOME/plugins/
-# COPY config/ $AIRFLOW_HOME/config/
-
+RUN pip install --no-cache-dir -r requirements.txt
