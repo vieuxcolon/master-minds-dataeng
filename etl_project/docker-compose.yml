@@ -19,34 +19,48 @@ x-airflow-common: &airflow-common
   build:
     context: ./docker
     dockerfile: Dockerfile.airflow
-    args:
-      AIRFLOW_UID: 50000
+
   environment:
+    # --- Airflow user / permissions ---
+    AIRFLOW_UID: ${AIRFLOW_UID:-50000}
+
+    # --- Core Airflow config ---
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+
+    # --- Database ---
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >
       postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+
+    # --- Celery ---
     AIRFLOW__CELERY__RESULT_BACKEND: >
       db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+
+    # --- API / Auth ---
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
+
+    # --- Optional Python packages ---
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-debugpy}
+
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
     - ./config:/opt/airflow/config
-  user: "${AIRFLOW_UID}:0"
+
   depends_on:
     postgres:
       condition: service_healthy
     redis:
       condition: service_healthy
+
   networks:
     - airflow_network
-  restart: always  # dev + prod consistency
+
+  restart: always
 
 # ============================================================
 # SERVICES
@@ -55,7 +69,7 @@ x-airflow-common: &airflow-common
 services:
 
   # ---------------------------
-  # PostgreSQL (ETL + Airflow)
+  # PostgreSQL (Airflow + ETL)
   # ---------------------------
   postgres:
     image: postgres:16
@@ -151,8 +165,8 @@ services:
   druid:
     image: apache/druid:latest
     ports:
-      - "8888:8888"   # Console
-      - "8082:8082"   # Broker
+      - "8888:8888"
+      - "8082:8082"
     networks:
       - airflow_network
     restart: always
@@ -184,7 +198,7 @@ services:
     command: webserver
     ports:
       - "8080:8080"
-      - "5678:5678"  # VSCode debug port
+      - "5678:5678"
 
   airflow-scheduler:
     <<: *airflow-common
