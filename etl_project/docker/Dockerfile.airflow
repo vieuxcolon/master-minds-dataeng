@@ -4,16 +4,9 @@
 FROM apache/airflow:2.9.3-python3.11
 
 # -------------------------------------------------------------
-# Build Arguments (optional)
+# Optional build argument for UID
 # -------------------------------------------------------------
 ARG AIRFLOW_UID=50000
-
-# -------------------------------------------------------------
-# Environment variables
-# -------------------------------------------------------------
-ENV AIRFLOW_HOME=/opt/airflow
-ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
-WORKDIR $AIRFLOW_HOME
 
 # -------------------------------------------------------------
 # Copy requirements files
@@ -22,37 +15,34 @@ COPY requirements-base.txt /tmp/requirements-base.txt
 COPY requirements-heavy.txt /tmp/requirements-heavy.txt
 
 # -------------------------------------------------------------
-# Install base requirements
+# Switch to airflow user (official image default)
 # -------------------------------------------------------------
 USER airflow
-RUN if [ -f /tmp/requirements-base.txt ]; then \
-        pip install --user --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-base.txt; \
-    fi
 
 # -------------------------------------------------------------
-# Install heavy requirements (optional, large packages)
+# Environment Variables
 # -------------------------------------------------------------
-RUN if [ -f /tmp/requirements-heavy.txt ]; then \
-        pip install --user --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-heavy.txt; \
-    fi
-
-# -------------------------------------------------------------
-# Optional: install packages passed via environment variable
-# -------------------------------------------------------------
-ENV _PIP_ADDITIONAL_REQUIREMENTS=""
-RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then \
-        pip install --user --no-cache-dir $_PIP_ADDITIONAL_REQUIREMENTS; \
-    fi
-
-# -------------------------------------------------------------
-# Set airflow user and working directory
-# -------------------------------------------------------------
-USER airflow
+ENV AIRFLOW_HOME=/opt/airflow
 WORKDIR $AIRFLOW_HOME
+ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
 
 # -------------------------------------------------------------
-# Optional: DAGs, plugins, config (mounted via docker-compose)
+# Install Python dependencies
+# -------------------------------------------------------------
+# Base requirements
+RUN if [ -f /tmp/requirements-base.txt ]; then \
+        pip install --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-base.txt; \
+    fi
+
+# Heavy requirements (optional large packages)
+RUN if [ -f /tmp/requirements-heavy.txt ]; then \
+        pip install --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-heavy.txt; \
+    fi
+
+# -------------------------------------------------------------
+# Copy dags, plugins, config (optional, usually mounted)
 # -------------------------------------------------------------
 # COPY dags/ $AIRFLOW_HOME/dags/
 # COPY plugins/ $AIRFLOW_HOME/plugins/
 # COPY config/ $AIRFLOW_HOME/config/
+
