@@ -27,7 +27,7 @@ services:
 
   airflow-scheduler:
     build:
-      context: .
+      context: ./docker
       dockerfile: Dockerfile.airflow
       args:
         AIRFLOW_UID: 50000
@@ -45,7 +45,7 @@ services:
 
   airflow-worker:
     build:
-      context: .
+      context: ./docker
       dockerfile: Dockerfile.airflow
       args:
         AIRFLOW_UID: 50000
@@ -63,7 +63,7 @@ services:
 
   airflow-triggerer:
     build:
-      context: .
+      context: ./docker
       dockerfile: Dockerfile.airflow
       args:
         AIRFLOW_UID: 50000
