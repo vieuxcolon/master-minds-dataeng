@@ -1,21 +1,50 @@
-# Base Airflow image
+# -------------------------------------------------------------
+# Base Image
+# -------------------------------------------------------------
 FROM apache/airflow:2.9.3-python3.11
 
-# Always run as the airflow user (as intended by the image)
-USER airflow
+# -------------------------------------------------------------
+# Build Argument for UID (optional, handled at runtime)
+# -------------------------------------------------------------
+ARG AIRFLOW_UID=50000
 
-# Airflow environment
-ENV AIRFLOW_HOME=/opt/airflow
-ENV PATH="${AIRFLOW_HOME}/.local/bin:${PATH}"
-
-# Copy Python requirements (optional)
+# -------------------------------------------------------------
+# Install additional Python packages
+# -------------------------------------------------------------
+# Copy optional requirements.txt (extra packages only, not apache-airflow)
 COPY requirements.txt /tmp/requirements.txt
 
-# Install Python dependencies
+# Install extra Python packages system-wide
+USER root
 RUN if [ -f /tmp/requirements.txt ]; then \
-      pip install --no-cache-dir -r /tmp/requirements.txt; \
+        pip install --no-cache-dir -r /tmp/requirements.txt; \
     fi
 
-# Set working directory
-WORKDIR /opt/airflow
+# Install additional packages passed via environment variable
+ENV _PIP_ADDITIONAL_REQUIREMENTS=""
+RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then \
+        pip install --no-cache-dir $_PIP_ADDITIONAL_REQUIREMENTS; \
+    fi
+
+# -------------------------------------------------------------
+# Switch to airflow user (official image default)
+# -------------------------------------------------------------
+USER airflow
+
+# -------------------------------------------------------------
+# Environment Variables
+# -------------------------------------------------------------
+ENV AIRFLOW_HOME=/opt/airflow
+WORKDIR $AIRFLOW_HOME
+
+# Ensure PATH includes airflow binaries installed via pip
+ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
+
+# -------------------------------------------------------------
+# Copy dags, plugins, config (optional, mounted via docker-compose)
+# -------------------------------------------------------------
+# COPY dags/ $AIRFLOW_HOME/dags/
+# COPY plugins/ $AIRFLOW_HOME/plugins/
+# COPY config/ $AIRFLOW_HOME/config/
+
 
