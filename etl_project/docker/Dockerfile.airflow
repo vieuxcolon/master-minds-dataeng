@@ -4,40 +4,49 @@
 FROM apache/airflow:2.9.3-python3.11
 
 # -------------------------------------------------------------
-# Build Argument for UID (optional, handled at runtime)
+# Build Argument (optional, UID handled at runtime)
 # -------------------------------------------------------------
 ARG AIRFLOW_UID=50000
-
-# -------------------------------------------------------------
-# Copy requirements.txt (extra packages only)
-# -------------------------------------------------------------
-COPY requirements.txt /tmp/requirements.txt
-
-# -------------------------------------------------------------
-# Install extra Python packages as airflow user
-# -------------------------------------------------------------
-USER airflow
-RUN if [ -f /tmp/requirements.txt ]; then \
-        pip install --no-cache-dir -r /tmp/requirements.txt; \
-    fi
-
-# Install additional packages via environment variable
-ENV _PIP_ADDITIONAL_REQUIREMENTS=""
-RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then \
-        pip install --no-cache-dir $_PIP_ADDITIONAL_REQUIREMENTS; \
-    fi
 
 # -------------------------------------------------------------
 # Environment Variables
 # -------------------------------------------------------------
 ENV AIRFLOW_HOME=/opt/airflow
 WORKDIR $AIRFLOW_HOME
-
-# Ensure PATH includes airflow binaries installed via pip
 ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
 
 # -------------------------------------------------------------
-# Optional: copy dags/plugins/config if needed
+# Copy and install small Python packages (fast, frequent updates)
+# -------------------------------------------------------------
+COPY requirements-base.txt /tmp/requirements-base.txt
+USER root
+RUN if [ -f /tmp/requirements-base.txt ]; then \
+        pip install --no-cache-dir --default-timeout=1000 --retries=10 -r /tmp/requirements-base.txt; \
+    fi
+
+# -------------------------------------------------------------
+# Copy and install heavy Python packages (cached, large files)
+# -------------------------------------------------------------
+COPY requirements-heavy.txt /tmp/requirements-heavy.txt
+RUN if [ -f /tmp/requirements-heavy.txt ]; then \
+        pip install --default-timeout=1000 --retries=10 -r /tmp/requirements-heavy.txt; \
+    fi
+
+# -------------------------------------------------------------
+# Install additional packages passed via environment variable
+# -------------------------------------------------------------
+ENV _PIP_ADDITIONAL_REQUIREMENTS=""
+RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then \
+        pip install --no-cache-dir --default-timeout=1000 --retries=10 $_PIP_ADDITIONAL_REQUIREMENTS; \
+    fi
+
+# -------------------------------------------------------------
+# Switch to airflow user (official image default)
+# -------------------------------------------------------------
+USER airflow
+
+# -------------------------------------------------------------
+# Optional: Copy dags, plugins, config (mounted via docker-compose)
 # -------------------------------------------------------------
 # COPY dags/ $AIRFLOW_HOME/dags/
 # COPY plugins/ $AIRFLOW_HOME/plugins/
