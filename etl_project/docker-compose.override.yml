@@ -4,7 +4,7 @@ services:
   # -----------------------------
   airflow-apiserver:
     build:
-      context: .
+      context: ./docker
       dockerfile: Dockerfile.airflow
       args:
         AIRFLOW_UID: 50000
