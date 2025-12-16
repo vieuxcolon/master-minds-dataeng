@@ -1,31 +1,21 @@
-# Base image
+# Base Airflow image
 FROM apache/airflow:2.9.3-python3.11
 
-# Build argument for Airflow UID
-ARG AIRFLOW_UID=50000
-
-# Set UID/GID for airflow user
-USER root
-RUN usermod -u ${AIRFLOW_UID} airflow \
-    && groupmod -g ${AIRFLOW_UID} airflow \
-    && mkdir -p /opt/airflow
-
-# Switch to airflow user
+# Always run as the airflow user (as intended by the image)
 USER airflow
 
-# Environment
+# Airflow environment
 ENV AIRFLOW_HOME=/opt/airflow
-ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
+ENV PATH="${AIRFLOW_HOME}/.local/bin:${PATH}"
 
-# Copy optional requirements
+# Copy Python requirements (optional)
 COPY requirements.txt /tmp/requirements.txt
 
-# Install Python packages from requirements.txt as airflow user
-RUN if [ -f /tmp/requirements.txt ]; then pip install --no-cache-dir -r /tmp/requirements.txt; fi
-
-# Install additional packages passed via environment variable
-ENV _PIP_ADDITIONAL_REQUIREMENTS=""
-RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then pip install --no-cache-dir $_PIP_ADDITIONAL_REQUIREMENTS; fi
+# Install Python dependencies
+RUN if [ -f /tmp/requirements.txt ]; then \
+      pip install --no-cache-dir -r /tmp/requirements.txt; \
+    fi
 
 # Set working directory
 WORKDIR /opt/airflow
+
