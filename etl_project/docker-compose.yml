@@ -19,6 +19,8 @@ x-airflow-common: &airflow-common
   build:
     context: ./docker
     dockerfile: Dockerfile.airflow
+    args:
+      AIRFLOW_UID: 50000
   environment:
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
@@ -29,12 +31,13 @@ x-airflow-common: &airflow-common
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-debugpy}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
+    - ./config:/opt/airflow/config
   user: "${AIRFLOW_UID}:0"
   depends_on:
     postgres:
@@ -43,6 +46,7 @@ x-airflow-common: &airflow-common
       condition: service_healthy
   networks:
     - airflow_network
+  restart: always  # dev + prod consistency
 
 # ============================================================
 # SERVICES
@@ -69,10 +73,8 @@ services:
       retries: 5
     networks:
       - airflow_network
+    restart: always
 
-  # ---------------------------
-  # PgAdmin
-  # ---------------------------
   pgadmin:
     image: dpage/pgadmin4
     environment:
@@ -84,6 +86,7 @@ services:
       - postgres
     networks:
       - airflow_network
+    restart: always
 
   # ---------------------------
   # Redis + RedisInsight
@@ -98,6 +101,7 @@ services:
       retries: 10
     networks:
       - airflow_network
+    restart: always
 
   redisinsight:
     image: redis/redisinsight:latest
@@ -107,6 +111,7 @@ services:
       - redis
     networks:
       - airflow_network
+    restart: always
 
   # ---------------------------
   # MongoDB + Mongo Express
@@ -121,8 +126,10 @@ services:
       - mongo-config:/data/configdb
     ports:
       - "${MONGO_PORT1}:27017"
+      - "${MONGO_PORT2}:27018"
     networks:
       - airflow_network
+    restart: always
 
   mongo-express:
     image: mongo-express:latest
@@ -136,6 +143,7 @@ services:
       - mongo
     networks:
       - airflow_network
+    restart: always
 
   # ---------------------------
   # Apache Druid (POC single node)
@@ -147,15 +155,17 @@ services:
       - "8082:8082"   # Broker
     networks:
       - airflow_network
+    restart: always
 
   # ---------------------------
-  # Apache Superset (disabled DB for now)
+  # Apache Superset
   # ---------------------------
   superset:
     image: apache/superset:latest
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
       SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_DATABASE_URI: postgresql+psycopg2://superset:superset@postgres:5432/superset
     volumes:
       - superset-home:/app/superset_home
     ports:
@@ -164,15 +174,17 @@ services:
       - postgres
     networks:
       - airflow_network
+    restart: always
 
   # ---------------------------
   # Airflow Services
   # ---------------------------
   airflow-apiserver:
     <<: *airflow-common
-    command: api-server
+    command: webserver
     ports:
       - "8080:8080"
+      - "5678:5678"  # VSCode debug port
 
   airflow-scheduler:
     <<: *airflow-common
