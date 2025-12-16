@@ -1,1 +1,9 @@
-aaa
+FROM apache/airflow:3.1.0
+
+ENV AIRFLOW_HOME=/opt/airflow
+WORKDIR $AIRFLOW_HOME
+ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
+
+COPY requirements.txt $AIRFLOW_HOME/requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
