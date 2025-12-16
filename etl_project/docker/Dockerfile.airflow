@@ -9,27 +9,23 @@ FROM apache/airflow:2.9.3-python3.11
 ARG AIRFLOW_UID=50000
 
 # -------------------------------------------------------------
-# Install additional Python packages
+# Copy requirements.txt (extra packages only)
 # -------------------------------------------------------------
-# Copy optional requirements.txt (extra packages only, not apache-airflow)
 COPY requirements.txt /tmp/requirements.txt
 
-# Install extra Python packages system-wide
-USER root
+# -------------------------------------------------------------
+# Install extra Python packages as airflow user
+# -------------------------------------------------------------
+USER airflow
 RUN if [ -f /tmp/requirements.txt ]; then \
         pip install --no-cache-dir -r /tmp/requirements.txt; \
     fi
 
-# Install additional packages passed via environment variable
+# Install additional packages via environment variable
 ENV _PIP_ADDITIONAL_REQUIREMENTS=""
 RUN if [ -n "$_PIP_ADDITIONAL_REQUIREMENTS" ]; then \
         pip install --no-cache-dir $_PIP_ADDITIONAL_REQUIREMENTS; \
     fi
-
-# -------------------------------------------------------------
-# Switch to airflow user (official image default)
-# -------------------------------------------------------------
-USER airflow
 
 # -------------------------------------------------------------
 # Environment Variables
@@ -41,10 +37,8 @@ WORKDIR $AIRFLOW_HOME
 ENV PATH="$AIRFLOW_HOME/.local/bin:$PATH"
 
 # -------------------------------------------------------------
-# Copy dags, plugins, config (optional, mounted via docker-compose)
+# Optional: copy dags/plugins/config if needed
 # -------------------------------------------------------------
 # COPY dags/ $AIRFLOW_HOME/dags/
 # COPY plugins/ $AIRFLOW_HOME/plugins/
 # COPY config/ $AIRFLOW_HOME/config/
-
-
