@@ -185,7 +185,7 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
-    command: webserver
+    command: api-server
     ports:
       - "8080:8080"
     depends_on:
@@ -220,3 +220,4 @@ services:
       airflow-init:
         condition: service_completed_successfully
     restart: always
+
