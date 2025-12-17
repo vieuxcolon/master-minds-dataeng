@@ -183,7 +183,7 @@ services:
     networks:
       - airflow_network
 
-  airflow-webserver:
+  airflow-apiserver:
     <<: *airflow-common
     command: api-server
     ports:
