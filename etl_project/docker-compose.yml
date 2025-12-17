@@ -1,6 +1,8 @@
-# ============================================================
+version: "3.9"
+
+##############################
 # NETWORKS & VOLUMES
-# ============================================================
+##############################
 networks:
   airflow_network:
     name: airflow_network
@@ -13,19 +15,19 @@ volumes:
   druid-segments:
   druid-logs:
 
-# ============================================================
+##############################
 # AIRFLOW COMMON CONFIG
-# ============================================================
+##############################
 x-airflow-common: &airflow-common
   build: .
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
-    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
@@ -47,23 +49,22 @@ x-airflow-common: &airflow-common
   networks:
     - airflow_network
 
-# ============================================================
+##############################
 # SERVICES
-# ============================================================
+##############################
 services:
-
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
       retries: 5
       start_period: 5s
@@ -116,8 +117,9 @@ services:
   druid:
     image: apache/druid:35.0.1
     ports:
-      - "8888:8888"  # console
-      - "8082:8082"  # broker
+      - "${DRUID_ROUTER_PORT}:8888"
+      - "${DRUID_BROKER_PORT}:8082"
+      - "${DRUID_OVERLORD_PORT}:8090"
     volumes:
       - druid-segments:/opt/druid/segments
       - druid-logs:/opt/druid/logs
