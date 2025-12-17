@@ -1,45 +1,50 @@
+version: '3.9'
+
 # ============================================================
 # NETWORKS & VOLUMES
 # ============================================================
 networks:
   airflow_network:
+    name: airflow_network
 
 volumes:
   postgres-db-volume:
   mongo-data:
   mongo-config:
   superset-home:
+  druid-segments:
+  druid-logs:
 
 # ============================================================
 # AIRFLOW COMMON CONFIG
 # ============================================================
 x-airflow-common: &airflow-common
-  build:
-    context: .
-    dockerfile: Dockerfile.airflow
+  build: .
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: airflow.providers.celery.executors.celery_executor.CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_API_AUTH_JWT_SECRET}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
-    _PIP_ADDITIONAL_REQUIREMENTS: ''
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
-    - ./plugins:/opt/airflow/plugins
     - ./config:/opt/airflow/config
+    - ./plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
-    postgres:
-      condition: service_healthy
     redis:
+      condition: service_healthy
+    postgres:
       condition: service_healthy
   networks:
     - airflow_network
@@ -49,18 +54,12 @@ x-airflow-common: &airflow-common
 # ============================================================
 services:
 
-  # ---------------------------
-  # PostgreSQL
-  # ---------------------------
   postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
-      PGUSER: airflow
-      PGPASSWORD: airflow
-      PGDATABASE: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     ports:
@@ -74,9 +73,6 @@ services:
     networks:
       - airflow_network
 
-  # ---------------------------
-  # Redis
-  # ---------------------------
   redis:
     image: redis:7.2-bookworm
     expose:
@@ -90,9 +86,6 @@ services:
     networks:
       - airflow_network
 
-  # ---------------------------
-  # MongoDB
-  # ---------------------------
   mongo:
     image: mongo:7
     environment:
@@ -122,21 +115,18 @@ services:
     networks:
       - airflow_network
 
-  # ---------------------------
-  # Druid
-  # ---------------------------
   druid:
     image: apache/druid:35.0.1
     ports:
-      - "8888:8888"
-      - "8082:8082"
+      - "8888:8888"  # console
+      - "8082:8082"  # broker
+    volumes:
+      - druid-segments:/opt/druid/segments
+      - druid-logs:/opt/druid/logs
     restart: always
     networks:
       - airflow_network
 
-  # ---------------------------
-  # Superset
-  # ---------------------------
   superset:
     image: apache/superset:latest
     environment:
@@ -153,23 +143,17 @@ services:
     networks:
       - airflow_network
 
-  # ---------------------------
-  # pgAdmin
-  # ---------------------------
   pgadmin:
-    image: dpage/pgadmin4
+    image: elestio/pgadmin
+    container_name: pgadmin_airflow
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "${PGADMIN_PORT}:80"
-    restart: always
     networks:
       - airflow_network
 
-  # ---------------------------
-  # Airflow Init (FIXED)
-  # ---------------------------
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
@@ -179,10 +163,10 @@ services:
         echo "Initializing Airflow..."
         mkdir -p /opt/airflow/{logs,dags,plugins,config,data}
         chown -R "${AIRFLOW_UID}:0" /opt/airflow/
-
+        
         echo "Running DB migrations"
         /entrypoint airflow db migrate
-
+        
         echo "Creating admin user"
         /entrypoint airflow users create \
           --username ${_AIRFLOW_WWW_USER_USERNAME:-airflow} \
@@ -195,13 +179,12 @@ services:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     user: "0:0"
     networks:
       - airflow_network
 
-  # ---------------------------
-  # Airflow Services
-  # ---------------------------
   airflow-webserver:
     <<: *airflow-common
     command: webserver
